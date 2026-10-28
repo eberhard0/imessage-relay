@@ -86,6 +86,7 @@ object Relay {
         api = Api(prefs)
         _hidden.value = prefs.hiddenChats
         _favorites.value = prefs.favoriteChats
+        seen = prefs.seenChats
         _status.value = if (prefs.isConfigured) Status.Connecting else Status.NotConfigured
     }
 
@@ -117,8 +118,16 @@ object Relay {
         return h
     }
 
+    /** Chat GUID → when it was last opened here. Relay can't mark messages read on the Mac. */
+    private var seen: Map<String, Long> = emptyMap()
+
     suspend fun refreshChats() {
-        _chats.value = api.chats()
+        // The Mac's unread count ignores reading in Relay, so a chat opened here
+        // since its last message shows no badge.
+        _chats.value = api.chats().map { chat ->
+            val openedAt = seen[chat.guid] ?: 0
+            if ((chat.lastMessage?.date ?: 0) <= openedAt) chat.copy(unread = 0) else chat
+        }
     }
 
     suspend fun loadThread(chatGuid: String) {
@@ -143,6 +152,10 @@ object Relay {
         // Only the stream moves the catch-up cursor: a just-sent reply can have a
         // higher ROWID than an incoming message the stream hasn't delivered yet.
         if (fromStream && m.id > prefs.lastEventId) prefs.lastEventId = m.id
+        if (visibleChat == m.chatGuid) {
+            seen = seen + (m.chatGuid to maxOf(System.currentTimeMillis(), m.date))
+            prefs.seenChats = seen
+        }
         _threads.update { threads ->
             val existing = threads[m.chatGuid] ?: return@update threads // not loaded: fetched when opened
             threads + (m.chatGuid to mergeMessages(existing, listOf(m)))
@@ -162,6 +175,8 @@ object Relay {
     }
 
     fun markSeen(chatGuid: String) {
+        seen = seen + (chatGuid to System.currentTimeMillis())
+        prefs.seenChats = seen
         _chats.update { chats -> chats.map { if (it.guid == chatGuid) it.copy(unread = 0) else it } }
     }
 

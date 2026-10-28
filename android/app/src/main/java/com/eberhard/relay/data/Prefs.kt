@@ -44,6 +44,16 @@ class Prefs(context: Context) {
         get() = prefs.getString("favorite_chats", "").orEmpty().split('\n').filter { it.isNotEmpty() }.toSet()
         set(value) = prefs.edit().putString("favorite_chats", value.joinToString("\n")).apply()
 
+    /** When each chat was last opened in Relay (GUID → Unix ms), for the unread badge. */
+    var seenChats: Map<String, Long>
+        get() = prefs.getString("seen_chats", "").orEmpty().split('\n').mapNotNull { line ->
+            val i = line.lastIndexOf('\t')
+            if (i <= 0) null else line.substring(i + 1).toLongOrNull()?.let { line.substring(0, i) to it }
+        }.toMap()
+        set(value) = prefs.edit()
+            .putString("seen_chats", value.entries.joinToString("\n") { "${it.key}\t${it.value}" })
+            .apply()
+
     val isConfigured: Boolean get() = token.isNotEmpty() && baseUrl.isNotEmpty()
 
     companion object {

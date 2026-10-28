@@ -66,6 +66,7 @@ jobs:
           if [ -z "$KEYSTORE_FILE" ]; then ./gradlew --no-daemon assembleDebug; fi
 
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: relay-${{ steps.ver.outputs.name }}
           retention-days: 7

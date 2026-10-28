@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Speech bubble with a relay arrow, on blue. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#1F6FE0" android:pathData="M0,0h108v108h-108z" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M30,34h48a8,8 0,0 1,8 8v22a8,8 0,0 1,-8 8H50l-12,10v-10h-8a8,8 0,0 1,-8 -8V42a8,8 0,0 1,8 -8z" />
+    <path android:fillColor="#1F6FE0"
+        android:pathData="M40,51h22v-6l12,9 -12,9v-6H40z" />
+</vector>

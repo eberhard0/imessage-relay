@@ -1,4 +1,7 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.foundation.ExperimentalFoundationApi::class,
+)
 
 package com.eberhard.relay.ui
 
@@ -8,6 +11,7 @@ import android.text.format.DateUtils
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,7 +36,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -97,6 +107,9 @@ fun RelayApp(openChat: String?, onChatOpened: () -> Unit) {
     val status by Relay.status.collectAsStateWithLifecycle()
     var showSetup by rememberSaveable { mutableStateOf(!Relay.prefs.isConfigured) }
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var showHideOld by remember { mutableStateOf(false) }
+    var showHidden by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(openChat) {
         if (openChat != null) {
@@ -109,6 +122,13 @@ fun RelayApp(openChat: String?, onChatOpened: () -> Unit) {
         SetupScreen(onDone = { showSetup = false }, canCancel = Relay.prefs.isConfigured)
         return
     }
+
+    if (showHidden) {
+        BackHandler { showHidden = false }
+        HiddenChatsScreen(onBack = { showHidden = false })
+        return
+    }
+    if (showHideOld) HideOldDialog(onDismiss = { showHideOld = false })
 
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     Scaffold(
@@ -123,8 +143,17 @@ fun RelayApp(openChat: String?, onChatOpened: () -> Unit) {
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showSetup = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Connection settings")
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(text = { Text("Hide old chats…") }, onClick = { menuOpen = false; showHideOld = true })
+                        DropdownMenuItem(text = { Text("Hidden chats") }, onClick = { menuOpen = false; showHidden = true })
+                        DropdownMenuItem(
+                            text = { Text("Connection settings") },
+                            leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                            onClick = { menuOpen = false; showSetup = true },
+                        )
                     }
                 },
             )
@@ -283,7 +312,15 @@ private fun timeLabel(ms: Long): String =
 
 @Composable
 private fun ChatList(selected: String?, onOpen: (String) -> Unit) {
-    val chats by Relay.chats.collectAsStateWithLifecycle()
+    val all by Relay.chats.collectAsStateWithLifecycle()
+    val hidden by Relay.hidden.collectAsStateWithLifecycle()
+    val favorites by Relay.favorites.collectAsStateWithLifecycle()
+    val visible = all.filterNot { Relay.isHidden(it, hidden) }
+    val favChats = visible.filter { it.guid in favorites }
+    val chats = visible.filter { it.guid !in favorites }
+    var actionsFor by remember { mutableStateOf<Chat?>(null) }
+    var confirmHide by remember { mutableStateOf<Chat?>(null) }
+    val context = LocalContext.current
     val status by Relay.status.collectAsStateWithLifecycle()
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -293,27 +330,87 @@ private fun ChatList(selected: String?, onOpen: (String) -> Unit) {
         }
     }
 
-    if (chats.isEmpty()) {
+    if (visible.isEmpty()) {
         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
             Text(error ?: "No conversations yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return
     }
+    actionsFor?.let { chat ->
+        val isFavorite = chat.guid in favorites
+        AlertDialog(
+            onDismissRequest = { actionsFor = null },
+            title = { Text(chat.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+            text = {
+                Column {
+                    TextButton(onClick = {
+                        Relay.setFavorite(chat.guid, !isFavorite)
+                        actionsFor = null
+                    }) { Text(if (isFavorite) "Remove from favorites" else "Add to favorites") }
+                    TextButton(onClick = {
+                        actionsFor = null
+                        confirmHide = chat
+                    }) { Text("Hide chat") }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { actionsFor = null }) { Text("Cancel") } },
+        )
+    }
+    confirmHide?.let { chat ->
+        AlertDialog(
+            onDismissRequest = { confirmHide = null },
+            title = { Text("Hide ${chat.title}?") },
+            text = {
+                Text(
+                    "It disappears from Relay only. Nothing is deleted on your Mac, iPhone or iCloud. " +
+                        "It comes back if a new message arrives, or from Menu › Hidden chats.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    Relay.hide(listOf(chat.guid))
+                    Notifier.clear(context, chat.guid)
+                    confirmHide = null
+                }) { Text("Hide") }
+            },
+            dismissButton = { TextButton(onClick = { confirmHide = null }) { Text("Cancel") } },
+        )
+    }
     LazyColumn(Modifier.fillMaxSize()) {
+        if (favChats.isNotEmpty()) {
+            item(key = "h-fav") { SectionLabel("Favorites") }
+            items(favChats, key = { "f-" + it.guid }) { chat ->
+                ChatRow(chat, chat.guid == selected, favorite = true, onLongClick = { actionsFor = chat }) { onOpen(chat.guid) }
+                HorizontalDivider()
+            }
+            if (chats.isNotEmpty()) item(key = "h-all") { SectionLabel("All chats") }
+        }
         items(chats, key = { it.guid }) { chat ->
-            ChatRow(chat, chat.guid == selected) { onOpen(chat.guid) }
+            ChatRow(chat, chat.guid == selected, favorite = false, onLongClick = { actionsFor = chat }) { onOpen(chat.guid) }
             HorizontalDivider()
         }
     }
 }
 
 @Composable
-private fun ChatRow(chat: Chat, selected: Boolean, onClick: () -> Unit) {
+private fun SectionLabel(text: String) {
+    Text(
+        text.uppercase(),
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
+    )
+}
+
+@Composable
+private fun ChatRow(chat: Chat, selected: Boolean, favorite: Boolean, onLongClick: () -> Unit, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
             .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -326,6 +423,9 @@ private fun ChatRow(chat: Chat, selected: Boolean, onClick: () -> Unit) {
         Spacer(Modifier.size(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (favorite) {
+                    Icon(Icons.Default.Star, contentDescription = "Favorite", tint = Color(0xFFF2B01E), modifier = Modifier.size(16.dp).padding(end = 2.dp))
+                }
                 Text(
                     chat.title,
                     style = MaterialTheme.typography.titleSmall,
@@ -498,5 +598,115 @@ private fun Bubble(m: Message, group: Boolean) {
             color = if (m.error != 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 10.dp),
         )
+    }
+}
+
+private val AGE_CHOICES = listOf(1 to "1 month", 3 to "3 months", 6 to "6 months", 12 to "1 year")
+
+/** Hides, in Relay only, every chat whose last message is older than the chosen age. */
+@Composable
+private fun HideOldDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val chats by Relay.chats.collectAsStateWithLifecycle()
+    val hidden by Relay.hidden.collectAsStateWithLifecycle()
+    var months by remember { mutableStateOf(3) }
+    val cutoff = System.currentTimeMillis() - months * 30L * DateUtils.DAY_IN_MILLIS
+    val favorites by Relay.favorites.collectAsStateWithLifecycle()
+    val old = chats.filter {
+        it.guid !in favorites && !Relay.isHidden(it, hidden) && (it.lastMessage?.date ?: 0) < cutoff
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Hide old chats") },
+        text = {
+            Column {
+                Text("Hide chats with no messages in the last:")
+                AGE_CHOICES.forEach { (m, label) ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { months = m },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = months == m, onClick = { months = m })
+                        Text(label)
+                    }
+                }
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    "${old.size} chat${if (old.size == 1) "" else "s"} will be hidden in Relay (favorites are kept). " +
+                        "Nothing is deleted on your Mac, iPhone or iCloud.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = old.isNotEmpty(), onClick = {
+                Relay.hide(old.map { it.guid })
+                old.forEach { Notifier.clear(context, it.guid) }
+                onDismiss()
+            }) { Text("Hide ${old.size}") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun HiddenChatsScreen(onBack: () -> Unit) {
+    val chats by Relay.chats.collectAsStateWithLifecycle()
+    val hidden by Relay.hidden.collectAsStateWithLifecycle()
+    val list = chats.filter { Relay.isHidden(it, hidden) }
+    // Hidden chats no longer in the bridge's recent list still count, by GUID.
+    val unknown = hidden.keys - chats.map { it.guid }.toSet()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Hidden chats") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        if (list.isEmpty() && unknown.isEmpty()) {
+            Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("No hidden chats", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            return@Scaffold
+        }
+        LazyColumn(Modifier.padding(padding).fillMaxSize()) {
+            items(list, key = { it.guid }) { chat ->
+                HiddenRow(chat.title, chat.lastMessage?.let { "Last message " + timeLabel(it.date) }) { Relay.unhide(chat.guid) }
+                HorizontalDivider()
+            }
+            if (unknown.isNotEmpty()) {
+                item {
+                    HiddenRow(
+                        "${unknown.size} older chat${if (unknown.size == 1) "" else "s"}",
+                        "Not in the recent list any more",
+                    ) { unknown.forEach(Relay::unhide) }
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HiddenRow(title: String, subtitle: String?, onUnhide: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            subtitle?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        TextButton(onClick = onUnhide) { Text("Unhide") }
     }
 }

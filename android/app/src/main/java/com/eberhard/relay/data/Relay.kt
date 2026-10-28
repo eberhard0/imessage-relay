@@ -44,6 +44,38 @@ object Relay {
     private val _threads = MutableStateFlow<Map<String, List<Message>>>(emptyMap())
     val threads: StateFlow<Map<String, List<Message>>> = _threads.asStateFlow()
 
+    /** Chats hidden in Relay: GUID → when. A message after that time brings the chat back. */
+    private val _hidden = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val hidden: StateFlow<Map<String, Long>> = _hidden.asStateFlow()
+
+    fun isHidden(chat: Chat, hidden: Map<String, Long> = _hidden.value): Boolean {
+        val at = hidden[chat.guid] ?: return false
+        return (chat.lastMessage?.date ?: 0) <= at
+    }
+
+    private val _favorites = MutableStateFlow<Set<String>>(emptySet())
+    val favorites: StateFlow<Set<String>> = _favorites.asStateFlow()
+
+    fun setFavorite(guid: String, favorite: Boolean) {
+        _favorites.update { if (favorite) it + guid else it - guid }
+        prefs.favoriteChats = _favorites.value
+    }
+
+    fun hide(guids: Collection<String>) {
+        val now = System.currentTimeMillis()
+        _hidden.update { it + guids.associateWith { now } }
+        prefs.hiddenChats = _hidden.value
+        if (guids.any { it in _favorites.value }) {
+            _favorites.update { it - guids.toSet() }
+            prefs.favoriteChats = _favorites.value
+        }
+    }
+
+    fun unhide(guid: String) {
+        _hidden.update { it - guid }
+        prefs.hiddenChats = _hidden.value
+    }
+
     /** The thread on screen while the app is in front: no notification for it. */
     @Volatile var visibleChat: String? = null
 
@@ -52,6 +84,8 @@ object Relay {
         appContext = context.applicationContext
         prefs = Prefs(appContext)
         api = Api(prefs)
+        _hidden.value = prefs.hiddenChats
+        _favorites.value = prefs.favoriteChats
         _status.value = if (prefs.isConfigured) Status.Connecting else Status.NotConfigured
     }
 

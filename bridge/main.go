@@ -114,6 +114,10 @@ func main() {
 		cmdServe(args)
 	case "check":
 		cmdCheck()
+	case "notes-check":
+		// Notes only: no Messages or Automation probe, safe to run next to the live bridge.
+		notes := &NotesStore{dir: filepath.Join(home(), "Library", "Group Containers", "group.com.apple.notes")}
+		fmt.Println("Notes:", notes.SelfTest())
 	case "install-agent":
 		cmdInstallAgent()
 	case "uninstall-agent":

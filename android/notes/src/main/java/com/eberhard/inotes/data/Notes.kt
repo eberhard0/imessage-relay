@@ -21,8 +21,10 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -87,7 +89,12 @@ data class Note(
     val modified: Long = 0,
     val locked: Boolean = false,
     val blocks: List<Block> = emptyList(),
+    /** The Mac allows adding text: no checklists, attachments or lock. */
+    val appendable: Boolean = false,
 )
+
+@Serializable private data class WriteRequest(val folder: String = "", val text: String)
+@Serializable private data class WriteResponse(val ok: Boolean = false, val id: String = "")
 
 @Serializable private data class FoldersResponse(val folders: List<Folder> = emptyList())
 @Serializable private data class NotesResponse(val notes: List<NoteSummary> = emptyList())
@@ -156,7 +163,8 @@ class NotesApplication : Application(), ImageLoaderFactory {
 }
 
 /**
- * App-wide state. Notes are only displayed: nothing is ever written back to the Mac.
+ * App-wide state. The only changes sent to the Mac are a new note and text added to the end
+ * of a plain note, each from an explicit tap.
  */
 object Notes {
     lateinit var prefs: Prefs
@@ -213,8 +221,15 @@ object Notes {
     fun authHeader(): String = "Bearer ${prefs.token}"
     fun attachmentUrl(id: String): String = prefs.baseUrl + "/v1/notes/attachments/" + Uri.encode(id)
 
-    private suspend fun get(path: String): String = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(prefs.baseUrl + path).header("Authorization", authHeader()).build()
+    private suspend fun get(path: String): String = call(Request.Builder().url(prefs.baseUrl + path))
+
+    private suspend fun post(path: String, body: WriteRequest): String = call(
+        Request.Builder().url(prefs.baseUrl + path)
+            .post(json.encodeToString(body).toRequestBody("application/json".toMediaType())),
+    )
+
+    private suspend fun call(builder: Request.Builder): String = withContext(Dispatchers.IO) {
+        val request = builder.header("Authorization", authHeader()).build()
         val response = try {
             http.newCall(request).execute()
         } catch (e: IOException) {
@@ -283,6 +298,23 @@ object Notes {
             if (cached == null) _status.value = statusFor(e)
             cached
         }
+    }
+
+    /**
+     * Adds [text] to the end of a plain note. Only ever called from an explicit tap; the Mac
+     * refuses notes whose checklists or attachments a rewrite could damage.
+     */
+    suspend fun append(id: String, text: String) {
+        post("/v1/notes/" + Uri.encode(id) + "/append", WriteRequest(text = text))
+        open(id)
+        refresh(force = true)
+    }
+
+    /** Creates a note (first line = title) and returns its id, or "" if the Mac hasn't named it yet. */
+    suspend fun create(folder: String?, text: String): String {
+        val id = json.decodeFromString<WriteResponse>(post("/v1/notes", WriteRequest(folder = folder.orEmpty(), text = text))).id
+        refresh(force = true)
+        return id
     }
 
     /** Downloads an attachment into the app's cache so another app can open it. */

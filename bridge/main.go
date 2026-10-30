@@ -657,12 +657,14 @@ func cmdServe(args []string) {
 	mux.HandleFunc("GET /v1/events", s.events)
 	mux.HandleFunc("POST /v1/send", s.send)
 	mux.HandleFunc("GET /v1/attachments/{id}", s.attachment)
-	// Apple Notes, read-only, for the iNotes app.
+	// Apple Notes for the iNotes app: reading, plus new notes and adding to plain notes.
 	mux.HandleFunc("GET /v1/notes", s.noteList)
 	mux.HandleFunc("GET /v1/notes/folders", s.noteFolders)
 	mux.HandleFunc("GET /v1/notes/changes", s.noteChanges)
 	mux.HandleFunc("GET /v1/notes/{id}", s.noteGet)
 	mux.HandleFunc("GET /v1/notes/attachments/{id}", s.noteAttachment)
+	mux.HandleFunc("POST /v1/notes", s.noteCreate)
+	mux.HandleFunc("POST /v1/notes/{id}/append", s.noteAppend)
 
 	srv := &http.Server{Handler: s.auth(mux), ReadHeaderTimeout: 10 * time.Second}
 	go func() {

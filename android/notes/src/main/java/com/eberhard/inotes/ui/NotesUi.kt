@@ -38,6 +38,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CheckBox
@@ -48,6 +49,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -125,12 +127,24 @@ fun NotesApp() {
     var query by rememberSaveable { mutableStateOf("") }
     var searching by rememberSaveable { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
+    var newNote by remember { mutableStateOf(false) }
     val folders by Notes.folders.collectAsStateWithLifecycle()
     val status by Notes.status.collectAsStateWithLifecycle()
 
     if (showSetup) {
         SetupScreen(onDone = { showSetup = false }, canCancel = Notes.prefs.isConfigured)
         return
+    }
+
+    if (newNote) {
+        val folderName = folders.firstOrNull { it.id == folder }?.name
+        WriteDialog(
+            title = "New note" + (folderName?.let { " in $it" } ?: ""),
+            hint = "The first line becomes the title.",
+            confirm = "Create",
+            onSend = { text -> Notes.create(folder, text).takeIf { it.isNotEmpty() }?.let { selected = it } },
+            onDismiss = { newNote = false },
+        )
     }
 
     val wide = LocalConfiguration.current.screenWidthDp >= 600
@@ -157,6 +171,7 @@ fun NotesApp() {
                 },
                 actions = {
                     if (!noteOpen) {
+                        IconButton(onClick = { newNote = true }) { Icon(Icons.Default.Add, "New note") }
                         IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
                             Icon(if (searching) Icons.Default.Close else Icons.Default.Search, if (searching) "Close search" else "Search")
                         }
@@ -378,6 +393,16 @@ private fun NoteView(id: String) {
 private fun NoteBody(note: Note) {
     val numbers = remember(note) { listNumbers(note.blocks) }
     val context = LocalContext.current
+    var adding by remember(note.id) { mutableStateOf(false) }
+    if (adding) {
+        WriteDialog(
+            title = "Add to \"${note.title}\"",
+            hint = "Goes at the end of the note, on the Mac and all your devices.",
+            confirm = "Add",
+            onSend = { text -> Notes.append(note.id, text) },
+            onDismiss = { adding = false },
+        )
+    }
     // One scrolling column (not a lazy list), so a selection can run across paragraphs.
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp)) {
         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -387,6 +412,13 @@ private fun NoteBody(note: Note) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
+            if (note.appendable) {
+                TextButton(onClick = { adding = true }) {
+                    Icon(Icons.Default.Add, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Add")
+                }
+            }
             TextButton(onClick = {
                 val cm = context.getSystemService(ClipboardManager::class.java)
                 cm.setPrimaryClip(ClipData.newPlainText(note.title, plainText(note.blocks, numbers)))
@@ -656,4 +688,52 @@ private fun SetupScreen(onDone: () -> Unit, canCancel: Boolean) {
             result?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         }
     }
+}
+
+/** Text entry for a new note or an addition. Sends only on the confirm tap. */
+@Composable
+private fun WriteDialog(title: String, hint: String, confirm: String, onSend: suspend (String) -> Unit, onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var text by rememberSaveable { mutableStateOf("") }
+    var sending by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = { if (!sending) onDismiss() },
+        title = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    enabled = !sending,
+                    minLines = 4,
+                    maxLines = 12,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (sending) Text("Saving on the Mac…", style = MaterialTheme.typography.bodySmall)
+                error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            Button(enabled = !sending && text.isNotBlank(), onClick = {
+                sending = true
+                error = null
+                scope.launch {
+                    try {
+                        onSend(text)
+                        onDismiss()
+                    } catch (e: Exception) {
+                        error = when (e) {
+                            is com.eberhard.inotes.data.BridgeException.Unreachable -> "Can't reach the Mac. Your text is still here; try again."
+                            else -> e.message ?: "The Mac couldn't save it."
+                        }
+                    } finally {
+                        sending = false
+                    }
+                }
+            }) { Text(confirm) }
+        },
+        dismissButton = { TextButton(enabled = !sending, onClick = onDismiss) { Text("Cancel") } },
+    )
 }

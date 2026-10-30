@@ -1,6 +1,7 @@
 package main
 
-// Read-only access to Apple Notes for the iNotes app. NoteStore.sqlite is
+// Access to Apple Notes for the iNotes app (reading here; the two allowed
+// changes go through Notes.app in notes_write.go). NoteStore.sqlite is
 // opened with mode=ro and a fresh connection per request, like chat.db: Notes
 // writes through the WAL and iCloud would sync any damage everywhere, so this
 // file never writes to it. Password-protected notes stay locked: only their
@@ -260,6 +261,8 @@ type NoteAttachment struct {
 type Note struct {
 	NoteSummary
 	Blocks []Block `json:"blocks"`
+	// True when the phone may add text to the end (see notes_write.go).
+	Appendable bool `json:"appendable"`
 }
 
 var errNoteNotFound = errors.New("no such note")
@@ -312,6 +315,7 @@ func (n *NotesStore) Note(id string) (*Note, error) {
 			blocks = []Block{{Type: "text", Spans: []Span{{Text: s.Snippet}}}}
 		}
 		note.Blocks = blocks
+		note.Appendable = err == nil && appendable(note)
 		return nil
 	})
 	return note, err

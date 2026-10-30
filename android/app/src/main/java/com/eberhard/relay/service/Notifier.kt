@@ -63,7 +63,7 @@ object Notifier {
     fun statusNotification(context: Context, text: String) =
         NotificationCompat.Builder(context, CHANNEL_STATUS)
             .setSmallIcon(R.drawable.ic_notify)
-            .setContentTitle("Relay")
+            .setContentTitle("iMessage")
             .setContentText(text)
             .setOngoing(true)
             .setSilent(true)

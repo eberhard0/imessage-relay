@@ -85,7 +85,7 @@ class RelayService : Service() {
                 Status.Connecting -> "Connecting to the Mac…"
                 Status.TailscaleOff -> "Tailscale is off — turn it on to get messages"
                 Status.MacUnreachable -> "Can't reach the Mac (asleep, offline, or bridge not running)"
-                Status.BadToken -> "The Mac rejected the token — check it in Relay"
+                Status.BadToken -> "The Mac rejected the token — check it in iMessage"
                 is Status.MacProblem -> status.detail
                 Status.NotConfigured -> "Not set up"
             },

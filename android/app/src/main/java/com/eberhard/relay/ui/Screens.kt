@@ -134,7 +134,7 @@ fun RelayApp(openChat: String?, onChatOpened: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (!wide && selected != null) Relay.chatTitle(selected!!) else "Relay") },
+                title = { Text(if (!wide && selected != null) Relay.chatTitle(selected!!) else "iMessage") },
                 navigationIcon = {
                     if (!wide && selected != null) {
                         IconButton(onClick = { selected = null }) {
@@ -228,7 +228,7 @@ private fun SetupScreen(onDone: () -> Unit, canCancel: Boolean) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                "Relay gets your iMessages from imsg-bridge on your Mac, over Tailscale. On the Mac, " +
+                "This app gets your iMessages from imsg-bridge on your Mac, over Tailscale. On the Mac, " +
                     "`imsg-bridge token` prints the token.",
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -363,7 +363,7 @@ private fun ChatList(selected: String?, onOpen: (String) -> Unit) {
             title = { Text("Hide ${chat.title}?") },
             text = {
                 Text(
-                    "It disappears from Relay only. Nothing is deleted on your Mac, iPhone or iCloud. " +
+                    "It disappears from this app only. Nothing is deleted on your Mac, iPhone or iCloud. " +
                         "It comes back if a new message arrives, or from Menu › Hidden chats.",
                 )
             },
@@ -633,7 +633,7 @@ private fun HideOldDialog(onDismiss: () -> Unit) {
                 }
                 Spacer(Modifier.size(8.dp))
                 Text(
-                    "${old.size} chat${if (old.size == 1) "" else "s"} will be hidden in Relay (favorites are kept). " +
+                    "${old.size} chat${if (old.size == 1) "" else "s"} will be hidden in this app (favorites are kept). " +
                         "Nothing is deleted on your Mac, iPhone or iCloud.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -8,6 +8,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Only apps signed with the same key (iNotes) may read the bridge connection. -->
+    <permission
+        android:name="com.eberhard.permission.BRIDGE_CONNECTION"
+        android:protectionLevel="signature" />
 
     <application
         android:allowBackup="false"
@@ -47,5 +51,11 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <provider
+            android:name=".data.ConnectionProvider"
+            android:authorities="com.eberhard.relay.connection"
+            android:exported="true"
+            android:permission="com.eberhard.permission.BRIDGE_CONNECTION" />
     </application>
 </manifest>

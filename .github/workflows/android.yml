@@ -1,6 +1,7 @@
 name: Android
 
-# Builds the Relay app. Every v* tag attaches the signed APK to the GitHub Release.
+# Builds the iMessage app (module app/, package com.eberhard.relay) and iNotes (module notes/).
+# Every v* tag attaches both signed APKs to the GitHub Release.
 # Signing needs four repository secrets: KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_PASSWORD, KEY_ALIAS
 # (set with ~/hindsight-keys/set-github-secrets.sh, REPO=eberhard0/imessage-relay).
 
@@ -71,12 +72,12 @@ jobs:
           name: relay-${{ steps.ver.outputs.name }}
           retention-days: 7
           path: |
-            android/app/build/outputs/apk/release/*.apk
-            android/app/build/outputs/apk/debug/*.apk
+            android/*/build/outputs/apk/release/*.apk
+            android/*/build/outputs/apk/debug/*.apk
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: android/app/build/outputs/apk/release/*.apk
+          files: android/*/build/outputs/apk/release/*.apk

@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Relay"
-include(":app")
+rootProject.name = "MacApps"
+include(":app", ":notes")

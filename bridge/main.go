@@ -1,4 +1,4 @@
-// imsg-bridge serves the Mac's iMessages to the Relay app on Android over
+// imsg-bridge serves the Mac's iMessages (and, read-only, Apple Notes) to the Android apps on Android over
 // Tailscale. It reads ~/Library/Messages/chat.db read-only and sends through
 // Messages.app with AppleScript. It listens on the tailnet address only and
 // every request needs the bearer token created by `imsg-bridge init`.
@@ -166,6 +166,13 @@ func cmdCheck() {
 	c := &Contacts{}
 	c.Reload(home())
 	fmt.Println("Contacts:   ", c.Count(), "phone numbers and emails")
+	notes := &NotesStore{dir: filepath.Join(home(), "Library", "Group Containers", "group.com.apple.notes")}
+	if n, _, err := notes.Changes(); err != nil {
+		fmt.Println("Notes:       NOT readable —", err)
+	} else {
+		fmt.Println("Notes:      ", n, "notes readable")
+		fmt.Println("Notes:      ", notes.SelfTest())
+	}
 }
 
 func cmdInstallAgent() {
@@ -257,6 +264,7 @@ type Server struct {
 	store      *Store
 	hub        *Hub
 	auto       *Automation
+	notes      *NotesStore
 	sendMu     sync.Mutex
 	pollMu     sync.Mutex
 	lastRowID  int64
@@ -369,6 +377,12 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	}
 	if dbErr != nil {
 		resp["db_error"] = dbErr.Error()
+	}
+	// Notes is optional: it doesn't change "ok", which is about messages.
+	notesErr := s.notes.Readable()
+	resp["notes_db_readable"] = notesErr == nil
+	if notesErr != nil {
+		resp["notes_error"] = notesErr.Error()
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -604,6 +618,7 @@ func cmdServe(args []string) {
 		store: &Store{path: filepath.Join(home(), "Library", "Messages", "chat.db"), contacts: contacts},
 		hub:   &Hub{clients: map[chan Message]struct{}{}},
 		auto:  &Automation{},
+		notes: &NotesStore{dir: filepath.Join(home(), "Library", "Group Containers", "group.com.apple.notes")},
 	}
 
 	if !*noCaffeinate {
@@ -638,6 +653,12 @@ func cmdServe(args []string) {
 	mux.HandleFunc("GET /v1/events", s.events)
 	mux.HandleFunc("POST /v1/send", s.send)
 	mux.HandleFunc("GET /v1/attachments/{id}", s.attachment)
+	// Apple Notes, read-only, for the iNotes app.
+	mux.HandleFunc("GET /v1/notes", s.noteList)
+	mux.HandleFunc("GET /v1/notes/folders", s.noteFolders)
+	mux.HandleFunc("GET /v1/notes/changes", s.noteChanges)
+	mux.HandleFunc("GET /v1/notes/{id}", s.noteGet)
+	mux.HandleFunc("GET /v1/notes/attachments/{id}", s.noteAttachment)
 
 	srv := &http.Server{Handler: s.auth(mux), ReadHeaderTimeout: 10 * time.Second}
 	go func() {

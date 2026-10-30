@@ -3,11 +3,15 @@
 package com.eberhard.inotes.ui
 
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.text.format.DateUtils
 import android.webkit.MimeTypeMap
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -30,6 +34,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -38,6 +43,7 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
@@ -371,18 +377,49 @@ private fun NoteView(id: String) {
 @Composable
 private fun NoteBody(note: Note) {
     val numbers = remember(note) { listNumbers(note.blocks) }
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp)) {
-        item {
+    val context = LocalContext.current
+    // One scrolling column (not a lazy list), so a selection can run across paragraphs.
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp)) {
+        Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                listOfNotNull(dateLabel(note.modified).takeIf { it.isNotEmpty() }?.let { "Edited $it" }).joinToString(),
+                dateLabel(note.modified).takeIf { it.isNotEmpty() }?.let { "Edited $it" }.orEmpty(),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                modifier = Modifier.weight(1f),
             )
+            TextButton(onClick = {
+                val cm = context.getSystemService(ClipboardManager::class.java)
+                cm.setPrimaryClip(ClipData.newPlainText(note.title, plainText(note.blocks, numbers)))
+                // Android 13+ shows its own confirmation.
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) Toast.makeText(context, "Note copied", Toast.LENGTH_SHORT).show()
+            }) {
+                Icon(Icons.Default.ContentCopy, null, Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Copy all")
+            }
         }
-        items(note.blocks.size) { i -> BlockView(note.blocks[i], numbers[i]) }
+        // Long-press any text to select and copy part of it.
+        SelectionContainer {
+            Column {
+                note.blocks.forEachIndexed { i, b -> BlockView(b, numbers[i]) }
+            }
+        }
     }
 }
+
+/** The note as plain text, with list markers and checkboxes, for the clipboard. */
+private fun plainText(blocks: List<Block>, numbers: List<Int>): String = blocks.mapIndexedNotNull { i, b ->
+    val text = b.spans.joinToString("") { it.text }
+    val pad = "    ".repeat(b.indent)
+    when (b.type) {
+        "attachment" -> b.attachment?.let { a -> if (a.kind == "link" && a.url.isNotEmpty()) a.url else "[${a.name.ifEmpty { a.label }}]" }
+        "bullet" -> "$pad• $text"
+        "dash" -> "$pad– $text"
+        "number" -> "$pad${numbers[i]}. $text"
+        "check" -> "$pad${if (b.done) "☑" else "☐"} $text"
+        else -> pad + text
+    }
+}.joinToString("\n")
 
 /** Numbers for numbered-list paragraphs, counting per indent level. */
 private fun listNumbers(blocks: List<Block>): List<Int> {

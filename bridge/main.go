@@ -269,6 +269,7 @@ type Server struct {
 	hub        *Hub
 	auto       *Automation
 	notes      *NotesStore
+	photos     *PhotoStore
 	sendMu     sync.Mutex
 	pollMu     sync.Mutex
 	lastRowID  int64
@@ -387,6 +388,9 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	resp["notes_db_readable"] = notesErr == nil
 	if notesErr != nil {
 		resp["notes_error"] = notesErr.Error()
+	}
+	if s.photos != nil {
+		resp["photos_imported"] = s.photos.count()
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -623,6 +627,7 @@ func cmdServe(args []string) {
 		hub:   &Hub{clients: map[chan Message]struct{}{}},
 		auto:  &Automation{},
 		notes: &NotesStore{dir: filepath.Join(home(), "Library", "Group Containers", "group.com.apple.notes")},
+		photos: newPhotoStore(),
 	}
 
 	if !*noCaffeinate {
@@ -665,6 +670,10 @@ func cmdServe(args []string) {
 	mux.HandleFunc("GET /v1/notes/attachments/{id}", s.noteAttachment)
 	mux.HandleFunc("POST /v1/notes", s.noteCreate)
 	mux.HandleFunc("POST /v1/notes/{id}/append", s.noteAppend)
+	// Photos from the iPhotos app: imported into Photos.app, which syncs them to iCloud.
+	mux.HandleFunc("POST /v1/photos", s.photoUpload)
+	mux.HandleFunc("POST /v1/photos/have", s.photoHave)
+	mux.HandleFunc("GET /v1/photos/stats", s.photoStats)
 
 	srv := &http.Server{Handler: s.auth(mux), ReadHeaderTimeout: 10 * time.Second}
 	go func() {

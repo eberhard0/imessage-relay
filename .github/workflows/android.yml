@@ -1,6 +1,6 @@
 name: Android
 
-# Builds the iMessage app (module app/, package com.eberhard.relay) and iNotes (module notes/).
+# Builds the iMessage app (module app/, package com.eberhard.relay), iNotes (notes/) and iPhotos (photos/).
 # Every v* tag attaches both signed APKs to the GitHub Release.
 # Signing needs four repository secrets: KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_PASSWORD, KEY_ALIAS
 # (set with ~/hindsight-keys/set-github-secrets.sh, REPO=eberhard0/imessage-relay).

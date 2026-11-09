@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The bridge speaks plain HTTP inside the tailnet: Tailscale (WireGuard)
+     already encrypts the link, and the bridge only listens on its 100.x
+     address. This app talks to nothing else. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

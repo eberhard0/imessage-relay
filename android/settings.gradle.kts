@@ -21,4 +21,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "MacApps"
-include(":app", ":notes")
+include(":app", ":notes", ":photos")

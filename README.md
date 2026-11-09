@@ -47,3 +47,15 @@ lid closed. On battery with the lid closed the Mac sleeps and messages stop unti
 
 Logs: `~/Library/Logs/imsg-bridge.log` (counts and errors only, never message text).
 Stop: `imsg-bridge uninstall-agent`.
+
+## iPhotos (android/photos)
+
+Backs up the phone's photos and videos to iCloud Photos through the Mac: the app uploads each
+file to the bridge (`POST /v1/photos`, raw body, `X-Photo-Name` / `X-Photo-Sha256`), the bridge
+imports it into Photos.app by AppleScript (`skip check duplicates true`; its own SHA-256 ledger
+in `~/Library/Application Support/imsg-bridge/photos.json` makes uploads idempotent) and Photos'
+iCloud sync does the rest. Automatic backup of new camera photos (WorkManager: every 15 min, on
+camera-roll changes, and "Sync now"), Wi-Fi-only / charging-only switches, camera folder or all
+media, "Send to iCloud" in the share sheet. Items that can't be sent (Tailscale off, Mac asleep)
+stay queued in the app's ledger and go when the Mac is reachable again. Borrows the bridge
+connection from the iMessage app like iNotes.

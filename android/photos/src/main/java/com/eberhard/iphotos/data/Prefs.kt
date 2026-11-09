@@ -3,13 +3,16 @@ package com.eberhard.iphotos.data
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import androidx.security.crypto.MasterKeys
 
 /** The bridge connection (encrypted) and the backup settings (plain). */
 class Prefs(context: Context) {
     private val secure: SharedPreferences = EncryptedSharedPreferences.create(
-        context, "bridge", MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        "bridge",
+        MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC),
+        context,
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
     )
     private val plain: SharedPreferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 

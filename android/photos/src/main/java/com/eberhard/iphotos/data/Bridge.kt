@@ -26,6 +26,10 @@ sealed class BridgeException(message: String) : IOException(message) {
 @Serializable data class HaveRequest(val sha256: List<String>)
 @Serializable data class HaveReply(val have: List<String> = emptyList(), val total: Int = 0)
 @Serializable data class Health(val ok: Boolean = false, val version: String = "", val photos_imported: Int = 0)
+@Serializable data class Album(val id: String, val title: String = "", val kind: String = "album", val path: String = "", val count: Int = 0, val cover: String = "", val owner: String = "")
+@Serializable data class AlbumsReply(val albums: List<Album> = emptyList())
+@Serializable data class MediaItem(val uuid: String, val name: String = "", val video: Boolean = false, val date: Long = 0, val w: Int = 0, val h: Int = 0, val dur: Double = 0.0, val fav: Boolean = false)
+@Serializable data class ItemsReply(val items: List<MediaItem> = emptyList(), val total: Int = 0, val offset: Int = 0)
 
 /** Talks to imsg-bridge's /v1/photos endpoints on the Mac. */
 class Bridge(private val context: Context, private val prefs: Prefs) {
@@ -51,6 +55,13 @@ class Bridge(private val context: Context, private val prefs: Prefs) {
     }
 
     fun health(): Health = json.decodeFromString(call(Request.Builder().url(prefs.baseUrl + "/v1/health")))
+
+    // The Mac's Photos library (bridge 0.5.0+): albums, items, and the files themselves.
+    fun albums(): List<Album> = json.decodeFromString<AlbumsReply>(call(Request.Builder().url(prefs.baseUrl + "/v1/library/albums"))).albums
+    fun items(album: String, offset: Int, limit: Int = 300): ItemsReply =
+        json.decodeFromString(call(Request.Builder().url(prefs.baseUrl + "/v1/library/items?album=" + Uri.encode(album) + "&offset=$offset&limit=$limit")))
+    fun mediaUrl(uuid: String, size: String) = prefs.baseUrl + "/v1/library/media/$uuid?size=$size"
+    val authHeader: String get() = "Bearer ${prefs.token}"
 
     fun have(shas: List<String>): HaveReply = json.decodeFromString(
         call(Request.Builder().url(prefs.baseUrl + "/v1/photos/have").post(json.encodeToString(HaveRequest.serializer(), HaveRequest(shas)).toRequestBody("application/json".toMediaType()))),

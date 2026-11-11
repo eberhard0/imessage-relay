@@ -50,6 +50,8 @@ Stop: `imsg-bridge uninstall-agent`.
 
 ## iPhotos (android/photos)
 
+**Library tab (bridge 0.5.0+):** browses the Mac's Photos library (= iCloud Photos) read-only: Recents / Favourites / Videos, albums with folder paths, shared albums (kind 1505, once "Shared Albums" is on in Photos' iCloud settings). Bridge reads `Photos.sqlite` read-only (`bridge/library.go`, join table looked up by name) and serves the derivatives Photos keeps on disk: `GET /v1/library/albums`, `GET /v1/library/items?album=## iPhotos (android/photos)offset=## iPhotos (android/photos)limit=`, `GET /v1/library/media/{uuid}?size=thumb|preview|original` (range requests; `original` falls back to the full-size preview when the original is only in iCloud, header `X-Original`). Save puts the file in Pictures/iPhotos or Movies/iPhotos via DownloadManager.
+
 Backs up the phone's photos and videos to iCloud Photos through the Mac: the app uploads each
 file to the bridge (`POST /v1/photos`, raw body, `X-Photo-Name` / `X-Photo-Sha256`), the bridge
 imports it into Photos.app by AppleScript (`skip check duplicates true`; its own SHA-256 ledger

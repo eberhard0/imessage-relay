@@ -270,6 +270,7 @@ type Server struct {
 	auto       *Automation
 	notes      *NotesStore
 	photos     *PhotoStore
+	library    *LibraryStore
 	sendMu     sync.Mutex
 	pollMu     sync.Mutex
 	lastRowID  int64
@@ -628,6 +629,7 @@ func cmdServe(args []string) {
 		auto:  &Automation{},
 		notes: &NotesStore{dir: filepath.Join(home(), "Library", "Group Containers", "group.com.apple.notes")},
 		photos: newPhotoStore(),
+		library: newLibraryStore(),
 	}
 
 	if !*noCaffeinate {
@@ -674,6 +676,9 @@ func cmdServe(args []string) {
 	mux.HandleFunc("POST /v1/photos", s.photoUpload)
 	mux.HandleFunc("POST /v1/photos/have", s.photoHave)
 	mux.HandleFunc("GET /v1/photos/stats", s.photoStats)
+	mux.HandleFunc("GET /v1/library/albums", s.libraryAlbums)
+	mux.HandleFunc("GET /v1/library/items", s.libraryItems)
+	mux.HandleFunc("GET /v1/library/media/{uuid}", s.libraryMedia)
 
 	srv := &http.Server{Handler: s.auth(mux), ReadHeaderTimeout: 10 * time.Second}
 	go func() {

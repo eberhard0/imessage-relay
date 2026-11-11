@@ -10,7 +10,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,7 +22,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -36,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,8 +67,25 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) { PhotosScreen() }
+            MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) { Root() }
         }
+    }
+}
+
+/** Two tabs: the backup (phone → iCloud) and the library (iCloud → phone, read-only). */
+@Composable
+private fun Root() {
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    Scaffold(
+        contentWindowInsets = WindowInsets(0),
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(tab == 0, { tab = 0 }, { Icon(Icons.Default.CloudUpload, null) }, label = { Text("Backup") })
+                NavigationBarItem(tab == 1, { tab = 1 }, { Icon(Icons.Default.PhotoLibrary, null) }, label = { Text("Library") })
+            }
+        },
+    ) { pad ->
+        Box(Modifier.padding(pad).fillMaxSize()) { if (tab == 0) PhotosScreen() else LibraryScreen() }
     }
 }
 

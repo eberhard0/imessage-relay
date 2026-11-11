@@ -28,9 +28,9 @@ import (
 
 const photosImportScript = `on run argv
 	tell application "Photos"
-		set items to import {POSIX file (item 1 of argv)} skip check duplicates true
-		if (count of items) > 0 then
-			return id of item 1 of items
+		set imported to import {POSIX file (item 1 of argv)} skip check duplicates true
+		if (count of imported) > 0 then
+			return id of item 1 of imported
 		end if
 		return ""
 	end tell

@@ -236,20 +236,47 @@ func (l *LibraryStore) albums() ([]Album, error) {
 	rows.Close()
 
 	// Shared albums on recent macOS: rows of ZSHARE, their items linked through ZSHAREPOST.
-	srows, err := db.Query(`SELECT s.Z_PK, COALESCE(s.ZTITLE,''),
-	        (SELECT COUNT(*) FROM ZASSET a JOIN ZSHAREPOST p ON p.Z_PK=a.ZSHAREPOST WHERE p.ZSHARE=s.Z_PK AND a.ZTRASHEDSTATE=0),
-	        (SELECT a.ZUUID FROM ZASSET a JOIN ZSHAREPOST p ON p.Z_PK=a.ZSHAREPOST WHERE p.ZSHARE=s.Z_PK AND a.ZTRASHEDSTATE=0 ORDER BY a.ZDATECREATED DESC LIMIT 1)
-	      FROM ZSHARE s WHERE s.ZSCOPETYPE=0 AND s.ZSTATUS=1 AND COALESCE(s.ZTRASHEDSTATE,0)=0 ORDER BY s.ZTITLE COLLATE NOCASE`)
+	// Counts and covers come from one pass over the shared assets (ZASSET.ZSHAREPOST has no index).
+	type agg struct {
+		n     int
+		cover string
+		date  float64
+	}
+	shared := map[int64]*agg{}
+	arows, err := db.Query(`SELECT p.ZSHARE, a.ZUUID, COALESCE(a.ZDATECREATED,0) FROM ZASSET a JOIN ZSHAREPOST p ON p.Z_PK=a.ZSHAREPOST WHERE a.ZTRASHEDSTATE=0`)
+	if err == nil {
+		for arows.Next() {
+			var share int64
+			var uuid string
+			var date float64
+			if arows.Scan(&share, &uuid, &date) != nil {
+				continue
+			}
+			g := shared[share]
+			if g == nil {
+				g = &agg{}
+				shared[share] = g
+			}
+			g.n++
+			if date >= g.date {
+				g.date, g.cover = date, uuid
+			}
+		}
+		arows.Close()
+	}
+	srows, err := db.Query(`SELECT Z_PK, COALESCE(ZTITLE,'') FROM ZSHARE WHERE ZSCOPETYPE=0 AND ZSTATUS=1 AND COALESCE(ZTRASHEDSTATE,0)=0 ORDER BY ZTITLE COLLATE NOCASE`)
 	if err == nil {
 		for srows.Next() {
 			var pk int64
 			var title string
-			var n int
-			var cov sql.NullString
-			if srows.Scan(&pk, &title, &n, &cov) != nil || title == "" || n == 0 {
+			if srows.Scan(&pk, &title) != nil || title == "" {
 				continue
 			}
-			out = append(out, Album{ID: "share-" + strconv.FormatInt(pk, 10), Title: title, Kind: "shared", Count: n, Cover: cov.String})
+			g := shared[pk]
+			if g == nil || g.n == 0 {
+				continue
+			}
+			out = append(out, Album{ID: "share-" + strconv.FormatInt(pk, 10), Title: title, Kind: "shared", Count: g.n, Cover: g.cover})
 		}
 		srows.Close()
 	}
@@ -382,12 +409,18 @@ func (l *LibraryStore) file(uuid, size string) (path, name string, original bool
 		if preview != "" {
 			return preview, strings.TrimSuffix(filename, filepath.Ext(filename)) + ".jpg", false, nil
 		}
+		if thumb != "" { // shared albums usually have only the thumbnail on the Mac
+			return thumb, strings.TrimSuffix(filename, filepath.Ext(filename)) + ".jpg", false, nil
+		}
 	default: // preview
 		if preview != "" {
 			return preview, strings.TrimSuffix(filename, filepath.Ext(filename)) + ".jpg", false, nil
 		}
 		if orig != "" {
 			return orig, filename, true, nil
+		}
+		if thumb != "" {
+			return thumb, strings.TrimSuffix(filename, filepath.Ext(filename)) + ".jpg", false, nil
 		}
 	}
 	return "", "", false, errors.New("not on the Mac (only in iCloud)")

@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.eberhard.iphotos.data.Album
 import com.eberhard.iphotos.data.Bridge
@@ -228,9 +229,11 @@ private fun Viewer(bridge: Bridge, loader: ImageLoader, items: List<MediaItem>, 
                 if (pager.currentPage == page) VideoPlayer(bridge.mediaUrl(it.uuid, "original"), bridge.authHeader)
                 else Thumb(bridge, loader, it.uuid, Modifier.fillMaxSize())
             } else {
-                AsyncImage(
+                SubcomposeAsyncImage(
                     model = ImageRequest.Builder(context).data(bridge.mediaUrl(it.uuid, "preview")).build(),
                     imageLoader = loader, contentDescription = it.name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize(),
+                    loading = { Thumb(bridge, loader, it.uuid, Modifier.fillMaxSize()) },
+                    error = { Thumb(bridge, loader, it.uuid, Modifier.fillMaxSize()) },
                 )
             }
         }

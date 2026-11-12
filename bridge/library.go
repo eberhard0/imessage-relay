@@ -149,14 +149,15 @@ func (l *LibraryStore) albums() ([]Album, error) {
 	}
 	defer db.Close()
 	out := []Album{}
+	// Shared-album items (ZSAVEDASSETTYPE 4) are not part of the user's own library.
 	count := func(where string) int {
 		var n int
-		_ = db.QueryRow(`SELECT COUNT(*) FROM ZASSET WHERE ZTRASHEDSTATE=0 AND ZHIDDEN=0 ` + where).Scan(&n)
+		_ = db.QueryRow(`SELECT COUNT(*) FROM ZASSET WHERE ZTRASHEDSTATE=0 AND ZHIDDEN=0 AND ZSAVEDASSETTYPE!=4 ` + where).Scan(&n)
 		return n
 	}
 	cover := func(where string) string {
 		var u string
-		_ = db.QueryRow(`SELECT ZUUID FROM ZASSET WHERE ZTRASHEDSTATE=0 AND ZHIDDEN=0 ` + where + ` ORDER BY ZDATECREATED DESC LIMIT 1`).Scan(&u)
+		_ = db.QueryRow(`SELECT ZUUID FROM ZASSET WHERE ZTRASHEDSTATE=0 AND ZHIDDEN=0 AND ZSAVEDASSETTYPE!=4 ` + where + ` ORDER BY ZDATECREATED DESC LIMIT 1`).Scan(&u)
 		return u
 	}
 	out = append(out,
@@ -220,7 +221,7 @@ func (l *LibraryStore) albums() ([]Album, error) {
 		if err := rows.Scan(&pk, &title, &kind, &parent, &owner, &n, &cov); err != nil {
 			continue
 		}
-		if title == "" {
+		if title == "" || n == 0 { // empty albums (app-made smart albums etc.) only add noise
 			continue
 		}
 		al := Album{ID: strconv.FormatInt(pk, 10), Title: title, Kind: "album", Count: n, Cover: cov.String}
@@ -231,6 +232,26 @@ func (l *LibraryStore) albums() ([]Album, error) {
 			al.Path = pathOf(parent)
 		}
 		out = append(out, al)
+	}
+	rows.Close()
+
+	// Shared albums on recent macOS: rows of ZSHARE, their items linked through ZSHAREPOST.
+	srows, err := db.Query(`SELECT s.Z_PK, COALESCE(s.ZTITLE,''),
+	        (SELECT COUNT(*) FROM ZASSET a JOIN ZSHAREPOST p ON p.Z_PK=a.ZSHAREPOST WHERE p.ZSHARE=s.Z_PK AND a.ZTRASHEDSTATE=0),
+	        (SELECT a.ZUUID FROM ZASSET a JOIN ZSHAREPOST p ON p.Z_PK=a.ZSHAREPOST WHERE p.ZSHARE=s.Z_PK AND a.ZTRASHEDSTATE=0 ORDER BY a.ZDATECREATED DESC LIMIT 1)
+	      FROM ZSHARE s WHERE s.ZSCOPETYPE=0 AND s.ZSTATUS=1 AND COALESCE(s.ZTRASHEDSTATE,0)=0 ORDER BY s.ZTITLE COLLATE NOCASE`)
+	if err == nil {
+		for srows.Next() {
+			var pk int64
+			var title string
+			var n int
+			var cov sql.NullString
+			if srows.Scan(&pk, &title, &n, &cov) != nil || title == "" || n == 0 {
+				continue
+			}
+			out = append(out, Album{ID: "share-" + strconv.FormatInt(pk, 10), Title: title, Kind: "shared", Count: n, Cover: cov.String})
+		}
+		srows.Close()
 	}
 	return out, nil
 }
@@ -244,12 +265,20 @@ func (l *LibraryStore) items(album string, offset, limit int) ([]MediaItem, int,
 	defer db.Close()
 	base := `FROM ZASSET s WHERE s.ZTRASHEDSTATE=0 AND s.ZHIDDEN=0`
 	var args []any
-	switch album {
-	case "recents":
-	case "favorites":
-		base += ` AND s.ZFAVORITE=1`
-	case "videos":
-		base += ` AND s.ZKIND=1`
+	switch {
+	case album == "recents":
+		base += ` AND s.ZSAVEDASSETTYPE!=4`
+	case album == "favorites":
+		base += ` AND s.ZFAVORITE=1 AND s.ZSAVEDASSETTYPE!=4`
+	case album == "videos":
+		base += ` AND s.ZKIND=1 AND s.ZSAVEDASSETTYPE!=4`
+	case strings.HasPrefix(album, "share-"):
+		pk, err := strconv.ParseInt(strings.TrimPrefix(album, "share-"), 10, 64)
+		if err != nil {
+			return nil, 0, errors.New("unknown album")
+		}
+		base += ` AND s.ZSHAREPOST IN (SELECT Z_PK FROM ZSHAREPOST WHERE ZSHARE=?)`
+		args = append(args, pk)
 	default:
 		pk, err := strconv.ParseInt(album, 10, 64)
 		if err != nil {
@@ -294,7 +323,8 @@ func (l *LibraryStore) file(uuid, size string) (path, name string, original bool
 		return "", "", false, err
 	}
 	var dir, filename string
-	err = db.QueryRow(`SELECT COALESCE(ZDIRECTORY,''), COALESCE(ZFILENAME,'') FROM ZASSET WHERE ZUUID=?`, uuid).Scan(&dir, &filename)
+	var savedType int
+	err = db.QueryRow(`SELECT COALESCE(ZDIRECTORY,''), COALESCE(ZFILENAME,''), COALESCE(ZSAVEDASSETTYPE,0) FROM ZASSET WHERE ZUUID=?`, uuid).Scan(&dir, &filename, &savedType)
 	db.Close()
 	if err != nil {
 		return "", "", false, errors.New("not in the library")
@@ -308,13 +338,12 @@ func (l *LibraryStore) file(uuid, size string) (path, name string, original bool
 		return ""
 	}
 	x := uuid[:1]
-	// Shared-album files sit under scopes/cloudsharing with the same layout.
+	// Shared-album files sit under scopes/cloudsharing: thumbnails in its own derivatives tree,
+	// originals (when downloaded) under data/<ZDIRECTORY>/<ZFILENAME>.
+	shared := savedType == 4 || strings.HasPrefix(dir, "scopes/")
 	roots := []string{l.dir}
-	if strings.HasPrefix(dir, "scopes/") {
-		parts := strings.SplitN(dir, "/", 3)
-		if len(parts) >= 2 {
-			roots = append([]string{filepath.Join(l.dir, parts[0], parts[1])}, roots...)
-		}
+	if shared {
+		roots = append([]string{filepath.Join(l.dir, "scopes", "cloudsharing")}, roots...)
 	}
 	var thumb, preview, orig string
 	for _, r := range roots {
@@ -327,12 +356,15 @@ func (l *LibraryStore) file(uuid, size string) (path, name string, original bool
 		}
 	}
 	if filename != "" {
-		cand := filepath.Join(l.dir, dir, filename)
-		if !strings.HasPrefix(dir, "scopes/") {
-			cand = filepath.Join(l.dir, "originals", dir, filename)
+		cands := []string{filepath.Join(l.dir, "originals", dir, filename)}
+		if shared {
+			cands = []string{filepath.Join(l.dir, "scopes", "cloudsharing", "data", dir, filename), filepath.Join(l.dir, dir, filename)}
 		}
-		if st, err := os.Stat(cand); err == nil && st.Size() > 0 {
-			orig = cand
+		for _, cand := range cands {
+			if st, err := os.Stat(cand); err == nil && st.Size() > 0 {
+				orig = cand
+				break
+			}
 		}
 	}
 	switch size {

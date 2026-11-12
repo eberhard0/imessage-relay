@@ -224,16 +224,16 @@ private fun Viewer(bridge: Bridge, loader: ImageLoader, items: List<MediaItem>, 
     BackHandler(onBack = onClose)
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
-            val it = items[page]
-            if (it.video) {
-                if (pager.currentPage == page) VideoPlayer(bridge.mediaUrl(it.uuid, "original"), bridge.authHeader)
-                else Thumb(bridge, loader, it.uuid, Modifier.fillMaxSize())
+            val item = items[page]
+            if (item.video) {
+                if (pager.currentPage == page) VideoPlayer(bridge.mediaUrl(item.uuid, "original"), bridge.authHeader)
+                else Thumb(bridge, loader, item.uuid, Modifier.fillMaxSize())
             } else {
                 SubcomposeAsyncImage(
-                    model = ImageRequest.Builder(context).data(bridge.mediaUrl(it.uuid, "preview")).build(),
-                    imageLoader = loader, contentDescription = it.name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize(),
-                    loading = { Thumb(bridge, loader, it.uuid, Modifier.fillMaxSize()) },
-                    error = { Thumb(bridge, loader, it.uuid, Modifier.fillMaxSize()) },
+                    model = ImageRequest.Builder(context).data(bridge.mediaUrl(item.uuid, "preview")).build(),
+                    imageLoader = loader, contentDescription = item.name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize(),
+                    loading = { Thumb(bridge, loader, item.uuid, Modifier.fillMaxSize()) },
+                    error = { Thumb(bridge, loader, item.uuid, Modifier.fillMaxSize()) },
                 )
             }
         }

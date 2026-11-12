@@ -271,6 +271,7 @@ type Server struct {
 	notes      *NotesStore
 	photos     *PhotoStore
 	library    *LibraryStore
+	phone      *PhoneStore
 	sendMu     sync.Mutex
 	pollMu     sync.Mutex
 	lastRowID  int64
@@ -630,6 +631,7 @@ func cmdServe(args []string) {
 		notes: &NotesStore{dir: filepath.Join(home(), "Library", "Group Containers", "group.com.apple.notes")},
 		photos: newPhotoStore(),
 		library: newLibraryStore(),
+		phone:   newPhoneStore(),
 	}
 
 	if !*noCaffeinate {
@@ -679,8 +681,10 @@ func cmdServe(args []string) {
 	mux.HandleFunc("GET /v1/library/albums", s.libraryAlbums)
 	mux.HandleFunc("GET /v1/library/items", s.libraryItems)
 	mux.HandleFunc("GET /v1/library/media/{uuid}", s.libraryMedia)
+	mux.HandleFunc("POST /v1/phone/location", s.phonePost)
+	mux.HandleFunc("GET /v1/phone/location", s.phoneGet)
 
-	srv := &http.Server{Handler: s.auth(mux), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Handler: publicThenAuth(s, mux), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 3*time.Second)
